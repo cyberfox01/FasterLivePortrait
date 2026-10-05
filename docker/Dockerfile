@@ -105,6 +105,12 @@ ENV PATH=/opt/venv/bin:$PATH \
     FLIP_ANIMAL=0 \
     FLIP_SERVICES="api webui"
 
+# The pipeline only does tiny matrix ops on the CPU; BLAS/OpenMP/OpenCV worker threads just busy-wait
+# (~1.6 cores in live mode on 4 cores). Single-threaded is as fast and much lighter.
+ENV OPENBLAS_NUM_THREADS=1 \
+    OMP_NUM_THREADS=1 \
+    OPENCV_FOR_THREADS_NUM=1
+
 # 8080 = REST-API, 9870 = Gradio-WebUI
 EXPOSE 8080 9870
 CMD ["bash", "/app/docker/start.sh"]
