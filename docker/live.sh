@@ -5,15 +5,21 @@
 ##   CAMERA          webcam device (default /dev/video0)
 ##   VIRTUAL_CAM_NR  number of the v4l2loopback device (default 10 -> /dev/video10)
 ##   PASTE_BACK      1 = output the full source image instead of the 512x512 face crop
-##   CHECKPOINTS     model directory (default /srv/data/AI/FasterLivePortrait.checkpoints)
+##   CHECKPOINTS     model directory (default <repo>/checkpoints, created if missing)
 ## Loads the v4l2loopback kernel module via sudo if the virtual camera does not exist yet.
 ## Stop with Ctrl+C.
 ##
 set -e
 GPU="${1:?usage: $0 rtx3060ti|rtx5060ti [source image]}"
 SOURCE="$2"
+DOCKER_DIR="$(cd "$(dirname "$0")" && pwd)"
+[[ -f "${DOCKER_DIR}/${GPU}/build.args" ]] || { echo "unknown GPU: ${GPU} (expected rtx3060ti or rtx5060ti)" >&2; exit 1; }
 IMAGE="${IMAGE:-faster_liveportrait}:${GPU}"
-CHECKPOINTS="${CHECKPOINTS:-/srv/data/AI/FasterLivePortrait.checkpoints}"
+docker image inspect "${IMAGE}" >/dev/null 2>&1 || { echo "image ${IMAGE} not found, build it with docker/build.sh ${GPU}" >&2; exit 1; }
+CHECKPOINTS="${CHECKPOINTS:-${DOCKER_DIR}/../checkpoints}"
+# create it as the current user, otherwise docker creates an empty root-owned directory
+mkdir -p "${CHECKPOINTS}"
+CHECKPOINTS="$(readlink -e "${CHECKPOINTS}")"
 CAMERA="${CAMERA:-/dev/video0}"
 VIRTUAL_CAM_NR="${VIRTUAL_CAM_NR:-10}"
 VIRTUAL_CAM="/dev/video${VIRTUAL_CAM_NR}"

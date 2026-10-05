@@ -43,7 +43,7 @@ docker/run.sh rtx5060ti
 - REST API: `http://<host>:8080/docs`
 - Gradio WebUI: `http://<host>:9870/`
 
-The checkpoints are mounted from `CHECKPOINTS` (default `../checkpoints`) to
+The checkpoints are mounted from `CHECKPOINTS` (default `checkpoints/` in the repo, created if missing) to
 `/app/checkpoints`. On start, `scripts/convert_missing_trt.py` builds all missing `.trt` engines next to the
 `.onnx` files. The first start takes a few minutes.
 

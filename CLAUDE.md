@@ -37,10 +37,12 @@ docker/run.sh rtx5060ti
   webcam (`/dev/video0`, Logitech C920) -> FasterLivePortrait -> `/dev/video10`.
 - Container entrypoint `docker/start.sh`: builds missing engines, then starts the API (8080) and/or the WebUI (9870).
   Controlled via `FLIP_SERVICES` (`api`, `webui` or `live`), `FLIP_CFG`, `FLIP_ANIMAL`, `FLIP_TRT_WORKSPACE_GB`.
-- Checkpoints: `/srv/data/AI/FasterLivePortrait.checkpoints`, mounted to `/app/checkpoints`.
+- Checkpoints: `run.sh`/`live.sh` mount `CHECKPOINTS` (default `checkpoints/` in the repo, created as the current user
+  if missing) to `/app/checkpoints`. Download: `warmshao/FasterLivePortrait` on Hugging Face (skip `*.trt`, `*.dll`, `*.whl`).
 
 Status: `rtx5060ti` is built and verified end to end (~32 ms/frame with `configs/trt_infer.yaml`, API and WebUI work).
-`rtx3060ti` has not been built yet. The build host only has the 5060 Ti.
+Hosts: athos has the 5060 Ti (checkpoints in `/srv/data/AI/FasterLivePortrait.checkpoints`), bam01 has the 3060 Ti
+(own checkpoints in the repo's `checkpoints/`). `rtx3060ti` is built on bam01 but not verified yet.
 
 ## Gotchas
 
@@ -69,6 +71,8 @@ Status: `rtx5060ti` is built and verified end to end (~32 ms/frame with `configs
 ```bash
 docker run --rm --gpus=all -v /srv/data/AI/FasterLivePortrait.checkpoints:/app/checkpoints faster_liveportrait:rtx5060ti python run.py --src_image assets/examples/source/s10.jpg --dri_video assets/examples/driving/d14.mp4 --cfg configs/trt_infer.yaml
 ```
+
+On bam01 (3060 Ti) use `-v $PWD/checkpoints:/app/checkpoints` and `faster_liveportrait:rtx3060ti` instead.
 
 Expected: `inference median time` of roughly 30 ms/frame on the 5060 Ti and result videos in `./results/<timestamp>/`.
 For the services: `http://<host>:8080/docs` and `http://<host>:9870/` must return HTTP 200.
