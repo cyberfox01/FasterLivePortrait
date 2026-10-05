@@ -7,8 +7,10 @@
 #   grid_sample_3d TensorRT plugin, XPose CUDA ops, pycuda and the Python venv.
 # Stage "runtime" (CUDA runtime + TensorRT runtime) only takes over the results.
 
-ARG CUDA_DEVEL_IMAGE
-ARG CUDA_RUNTIME_IMAGE
+# No real defaults, docker/build.sh passes them from build.args. The placeholders only keep
+# BuildKit's InvalidDefaultArgInFrom check quiet and make a build without build.args fail clearly.
+ARG CUDA_DEVEL_IMAGE=set-cuda-devel-image-via-build-args
+ARG CUDA_RUNTIME_IMAGE=set-cuda-runtime-image-via-build-args
 
 ########################################################################################
 FROM ${CUDA_DEVEL_IMAGE} AS builder
@@ -41,10 +43,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip setuptools wheel cmake
 ENV PATH=/opt/venv/bin:$PATH
 
-# grid_sample_3d TensorRT plugin for exactly this TRT version/GPU
+# grid_sample_3d TensorRT plugin for exactly this TRT version/GPU.
+# The pre-TRT-10 revision uses ${CUDAToolkit_INCLUDE_DIR}, which current CMake no longer sets
+# (cuda_fp16.h not found); upstream later switched to ${CUDAToolkit_INCLUDE_DIRS}, do the same here.
 RUN git clone https://github.com/SeanWangJS/grid-sample3d-trt-plugin /opt/grid-sample3d-trt-plugin \
     && cd /opt/grid-sample3d-trt-plugin && git checkout ${GRID_SAMPLE_PLUGIN_REF} \
     && sed -i "s/CUDA_ARCHITECTURES \"[^\"]*\"/CUDA_ARCHITECTURES \"${CUDA_ARCH}\"/" CMakeLists.txt test/CMakeLists.txt \
+    && sed -i 's/\${CUDAToolkit_INCLUDE_DIR}/${CUDAToolkit_INCLUDE_DIRS}/' CMakeLists.txt test/CMakeLists.txt \
     && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
     && cmake --build build --target grid_sample_3d_plugin -j"$(nproc)"
 
