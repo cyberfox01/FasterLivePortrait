@@ -60,7 +60,9 @@ Status: `rtx5060ti` is built and verified end to end (~32 ms/frame with `configs
   but locally they are in `liveportrait_animal_onnx_v1.1/`. The API only checks and converts animal models with `FLIP_ANIMAL=1`.
 - **JoyVASA / Kokoro (audio/text driving):** models are not present locally. The WebUI tabs exist but don't work.
 - **Disk space:** `/var/lib/docker` and `/srv/data` share one nearly full disk. Check `df -h /var/lib/docker` before
-  builds. A full image build needs ~15 GB of temporary space. Don't prune other projects' images or build cache without asking.
+  builds. A full image build needs ~21 GB of temporary space. Don't prune other projects' images or build cache without asking.
+  `docker buildx prune --filter id=<id>` silently skips records that still have child records (it reports `Total: 0B`),
+  so remove a stale cache chain leaf-first (children before parents, see `docker buildx du --verbose`).
 
 ## Verification
 
