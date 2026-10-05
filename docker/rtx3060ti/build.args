@@ -1,0 +1,18 @@
+# RTX 3060 Ti (Ampere, sm_86): upstream stack with CUDA 12.1, cuDNN 8, TensorRT 8.6
+CUDA_DEVEL_IMAGE=nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+CUDA_RUNTIME_IMAGE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+TRT_MAJOR=8
+TRT_VERSION=8.6.1.6-1+cuda12.0
+TRT_EXTRA_DEV_PKGS=
+TORCH_INDEX=https://download.pytorch.org/whl/cu121
+TORCH_VERSION=2.3.1
+TORCHVISION_VERSION=0.18.1
+TORCHAUDIO_VERSION=2.3.1
+# last onnxruntime-gpu release for CUDA 12 + cuDNN 8
+ORT_VERSION=1.18.0
+# torch 2.3 and onnxruntime 1.18 are built against NumPy 1.x
+EXTRA_CONSTRAINTS=numpy<2
+CUDA_ARCH=86
+TORCH_CUDA_ARCH_LIST=8.6
+# last grid-sample3d-trt-plugin revision before the switch to TensorRT 10
+GRID_SAMPLE_PLUGIN_REF=ad8a533308296026561b639f583e7d451e6766b2

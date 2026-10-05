@@ -1,0 +1,12 @@
+.git
+.idea
+**/__pycache__
+**/*.pyc
+checkpoints
+checkpoints_test
+results
+logs
+venv
+build
+dist
+third_party
