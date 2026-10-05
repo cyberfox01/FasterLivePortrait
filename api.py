@@ -47,7 +47,7 @@ else:
     FFMPEG = "ffmpeg"
 
 
-def check_all_checkpoints_exist(infer_cfg):
+def check_all_checkpoints_exist(infer_cfg, is_animal=True):
     """
     check whether all checkpoints exist
     :return:
@@ -67,6 +67,8 @@ def check_all_checkpoints_exist(infer_cfg):
             if not os.path.exists(infer_cfg.models[name].model_path) and not os.path.exists(
                     infer_cfg.models[name].model_path[:-4] + ".onnx"):
                 return False
+    if not is_animal:
+        return ret
     for name in infer_cfg.animal_models:
         if not isinstance(infer_cfg.animal_models[name].model_path, str):
             for i in range(len(infer_cfg.animal_models[name].model_path)):
@@ -96,7 +98,7 @@ def check_all_checkpoints_exist(infer_cfg):
     return ret
 
 
-def convert_onnx_to_trt_models(infer_cfg):
+def convert_onnx_to_trt_models(infer_cfg, is_animal=True):
     ret = True
     for name in infer_cfg.models:
         if not isinstance(infer_cfg.models[name].model_path, str):
@@ -127,6 +129,8 @@ def convert_onnx_to_trt_models(infer_cfg):
                     logger_f.error(f"convert onnx model: {onnx_path} failed")
                     return False
 
+    if not is_animal:
+        return ret
     for name in infer_cfg.animal_models:
         if not isinstance(infer_cfg.animal_models[name].model_path, str):
             for i in range(len(infer_cfg.animal_models[name].model_path)):
@@ -162,13 +166,14 @@ def convert_onnx_to_trt_models(infer_cfg):
 async def startup_event():
     global pipe
     # default use trt model
-    cfg_file = os.path.join(project_dir, "configs/trt_infer.yaml")
+    cfg_file = os.path.join(project_dir, os.environ.get("FLIP_CFG", "configs/trt_infer.yaml"))
     infer_cfg = OmegaConf.load(cfg_file)
-    checkpoints_exist = check_all_checkpoints_exist(infer_cfg)
+    is_animal = os.environ.get("FLIP_ANIMAL", "1") == "1"
+    checkpoints_exist = check_all_checkpoints_exist(infer_cfg, is_animal)
 
     # first: download model if not exist
     if not checkpoints_exist:
-        download_cmd = f"huggingface-cli download warmshao/FasterLivePortrait --local-dir {checkpoints_dir}"
+        download_cmd = f"hf download warmshao/FasterLivePortrait --local-dir {checkpoints_dir}"
         logger_f.info(f"download model: {download_cmd}")
         result = subprocess.run(download_cmd, shell=True, check=True)
         # 检查结果
@@ -178,13 +183,13 @@ async def startup_event():
             logger_f.error(f"Download checkpoints to {checkpoints_dir} failed")
             exit(1)
     # second: convert onnx model to trt
-    convert_ret = convert_onnx_to_trt_models(infer_cfg)
+    convert_ret = convert_onnx_to_trt_models(infer_cfg, is_animal)
     if not convert_ret:
         logger_f.error(f"convert onnx model to trt failed")
         exit(1)
 
     infer_cfg.infer_params.flag_pasteback = True
-    pipe = FasterLivePortraitPipeline(cfg=infer_cfg, is_animal=True)
+    pipe = FasterLivePortraitPipeline(cfg=infer_cfg, is_animal=is_animal)
 
 
 def run_with_video(source_image_path, driving_video_path, save_dir):
@@ -476,4 +481,4 @@ async def upload_files(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host=os.environ.get("FLIP_IP", "127.0.0.1"), port=os.environ.get("FLIP_PORT", 9871))
+    uvicorn.run(app, host=os.environ.get("FLIP_IP", "127.0.0.1"), port=int(os.environ.get("FLIP_PORT", 9871)))

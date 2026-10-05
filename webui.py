@@ -194,9 +194,12 @@ with gr.Blocks(theme=gr.themes.Soft(font=[gr.themes.GoogleFont("Plus Jakarta San
                         driving_text_input = gr.Textbox(value="Hi, I am created by Faster LivePortrait!",
                                                         label="Driving Text")
                         voice_dir = "checkpoints/Kokoro-82M/voices/"
-                        voice_names = [os.path.splitext(vname)[0] for vname in os.listdir(voice_dir) if vname.endswith(".pt")]
+                        voice_names = [os.path.splitext(vname)[0] for vname in (os.listdir(voice_dir) if os.path.isdir(voice_dir) else []) if vname.endswith(".pt")]
+                        # the default must be one of the choices, otherwise gradio rejects every run
+                        # (the dropdown is an input of the main animate button, not just of this tab)
+                        default_voice = 'af_heart' if 'af_heart' in voice_names else (voice_names[0] if voice_names else None)
                         voice_name = gr.Dropdown(
-                            choices=voice_names, value='af_heart', label="Voice Name")
+                            choices=voice_names, value=default_voice, label="Voice Name")
 
                 v_tab_selection = gr.Textbox(value="Video", visible=False)
                 v_tab_video.select(lambda: "Video", None, v_tab_selection)

@@ -31,9 +31,16 @@ logging.getLogger("EngineBuilder").setLevel(logging.INFO)
 log = logging.getLogger("EngineBuilder")
 
 
+TRT_MAJOR = int(trt.__version__.split(".")[0])
+
+
 def load_plugins(logger: trt.Logger):
     # 加载插件库
-    if platform.system().lower() == 'linux':
+    # FLIP_TRT_PLUGIN_PATH: plugin built for the installed TensorRT/GPU (set in the docker images)
+    plugin_path = os.environ.get("FLIP_TRT_PLUGIN_PATH")
+    if plugin_path:
+        ctypes.CDLL(plugin_path, mode=ctypes.RTLD_GLOBAL)
+    elif platform.system().lower() == 'linux':
         ctypes.CDLL("./checkpoints/liveportrait_onnx/libgrid_sample_3d_plugin.so", mode=ctypes.RTLD_GLOBAL)
     else:
         ctypes.CDLL("./checkpoints/liveportrait_onnx/grid_sample_3d_plugin.dll", mode=ctypes.RTLD_GLOBAL, winmode=0)
@@ -58,7 +65,11 @@ class EngineBuilder:
 
         self.builder = trt.Builder(self.trt_logger)
         self.config = self.builder.create_builder_config()
-        self.config.max_workspace_size = 12 * (2 ** 30)  # 12 GB
+        workspace = int(os.environ.get("FLIP_TRT_WORKSPACE_GB", 12)) * (2 ** 30)
+        if TRT_MAJOR >= 10:
+            self.config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace)
+        else:
+            self.config.max_workspace_size = workspace
 
         profile = self.builder.create_optimization_profile()
 
@@ -68,8 +79,11 @@ class EngineBuilder:
         # profile.set_shape("input.1", (1, 3, 512, 512), (1, 3, 512, 512), (1, 3, 512, 512))
 
         self.config.add_optimization_profile(profile)
-        # 严格类型约束
-        self.config.set_flag(trt.BuilderFlag.STRICT_TYPES)
+        # 严格类型约束 (STRICT_TYPES was removed in TensorRT 10)
+        if TRT_MAJOR >= 10:
+            self.config.set_flag(trt.BuilderFlag.OBEY_PRECISION_CONSTRAINTS)
+        else:
+            self.config.set_flag(trt.BuilderFlag.STRICT_TYPES)
 
         self.batch_size = None
         self.network = None
@@ -83,7 +97,8 @@ class EngineBuilder:
         Parse the ONNX graph and create the corresponding TensorRT network definition.
         :param onnx_path: The path to the ONNX graph to load.
         """
-        network_flags = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        # explicit batch is the only (and default) mode in TensorRT 10
+        network_flags = 0 if TRT_MAJOR >= 10 else 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
 
         self.network = self.builder.create_network(network_flags)
         self.parser = trt.OnnxParser(self.network, self.trt_logger)
@@ -106,7 +121,8 @@ class EngineBuilder:
         for output in outputs:
             log.info("Output '{}' with shape {} and dtype {}".format(output.name, output.shape, output.dtype))
         # assert self.batch_size > 0
-        self.builder.max_batch_size = 1
+        if TRT_MAJOR < 10:
+            self.builder.max_batch_size = 1
 
     def create_engine(
             self,
@@ -129,9 +145,13 @@ class EngineBuilder:
             else:
                 self.config.set_flag(trt.BuilderFlag.FP16)
 
-        with self.builder.build_engine(self.network, self.config) as engine, open(engine_path, "wb") as f:
+        serialized_engine = self.builder.build_serialized_network(self.network, self.config)
+        if serialized_engine is None:
+            log.error("Failed to build engine: {}".format(engine_path))
+            sys.exit(1)
+        with open(engine_path, "wb") as f:
             log.info("Serializing engine to file: {:}".format(engine_path))
-            f.write(engine.serialize())
+            f.write(serialized_engine)
 
 
 def main(args):

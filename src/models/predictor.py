@@ -44,7 +44,11 @@ class TensorRTPredictor:
         """
         :param engine_path: The path to the serialized engine to load from disk.
         """
-        if platform.system().lower() == 'linux':
+        # FLIP_TRT_PLUGIN_PATH: plugin built for the installed TensorRT/GPU (set in the docker images)
+        plugin_path = os.environ.get("FLIP_TRT_PLUGIN_PATH")
+        if plugin_path:
+            ctypes.CDLL(plugin_path, mode=ctypes.RTLD_GLOBAL)
+        elif platform.system().lower() == 'linux':
             ctypes.CDLL("./checkpoints/liveportrait_onnx/libgrid_sample_3d_plugin.so", mode=ctypes.RTLD_GLOBAL)
         else:
             ctypes.CDLL("./checkpoints/liveportrait_onnx/grid_sample_3d_plugin.dll", mode=ctypes.RTLD_GLOBAL,

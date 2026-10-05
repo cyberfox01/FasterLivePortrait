@@ -37,7 +37,8 @@ def get_extensions():
 
     # import ipdb; ipdb.set_trace()
 
-    if torch.cuda.is_available() and CUDA_HOME is not None:
+    # FORCE_CUDA=1 allows building without a visible GPU (e.g. during docker build)
+    if (torch.cuda.is_available() or os.environ.get("FORCE_CUDA") == "1") and CUDA_HOME is not None:
         extension = CUDAExtension
         sources += source_cuda
         define_macros += [("WITH_CUDA", None)]
@@ -46,6 +47,10 @@ def get_extensions():
             "-D__CUDA_NO_HALF_OPERATORS__",
             "-D__CUDA_NO_HALF_CONVERSIONS__",
             "-D__CUDA_NO_HALF2_OPERATORS__",
+        ]
+        # with TORCH_CUDA_ARCH_LIST set, torch generates the -gencode flags itself
+        if not os.environ.get("TORCH_CUDA_ARCH_LIST"):
+            extra_compile_args["nvcc"] += [
             # 添加以下行来指定多个 CUDA 架构
             "-gencode=arch=compute_60,code=sm_60",
             "-gencode=arch=compute_70,code=sm_70",
@@ -54,7 +59,7 @@ def get_extensions():
             "-gencode=arch=compute_86,code=sm_86",
             "-gencode=arch=compute_89,code=sm_89",
             "-gencode=arch=compute_90,code=sm_90"
-        ]
+            ]
     else:
         raise NotImplementedError('Cuda is not availabel')
 
