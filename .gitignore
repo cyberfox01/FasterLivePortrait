@@ -11,4 +11,6 @@ dist
 *.eg
 checkpoints_test
 logs
-third_party
+third_party# own source images; keep the upstream examples (s<n>.jpg)
+assets/examples/source/*
+!assets/examples/source/s[0-9]*.jpg
