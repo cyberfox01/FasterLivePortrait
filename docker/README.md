@@ -66,9 +66,10 @@ conferencing apps can use as a camera ("FasterLivePortrait"). If `/dev/video10` 
 | `CAMERA` | `/dev/video0` | webcam device |
 | `VIRTUAL_CAM_NR` | `10` | v4l2loopback device number (`/dev/video10`) |
 | `PASTE_BACK` | `0` | `1` = output the full source image instead of the 512x512 face crop |
+| `VIRTUAL_CAM_SIZE` | `1280x720` | output size; the image is fitted in undistorted with a blurred fill (apps like Teams stretch other aspect ratios), `native` = unchanged |
 
 Without a source image, `assets/examples/source/s10.jpg` is used. Outside Docker the same works with
-`run.py --dri_video /dev/video0 --realtime --virtual_cam /dev/video10 [--no_preview]`.
+`run.py --dri_video /dev/video0 --realtime --virtual_cam /dev/video10 [--virtual_cam_size 1280x720] [--no_preview]`.
 
 ## Configuration (environment variables)
 

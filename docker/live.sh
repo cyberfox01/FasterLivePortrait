@@ -5,6 +5,8 @@
 ##   CAMERA          webcam device (default /dev/video0)
 ##   VIRTUAL_CAM_NR  number of the v4l2loopback device (default 10 -> /dev/video10)
 ##   PASTE_BACK      1 = output the full source image instead of the 512x512 face crop
+##   VIRTUAL_CAM_SIZE  output size (default 1280x720, for apps like Teams that stretch other aspect ratios);
+##                     the image is fitted in undistorted with a blurred fill, "native" = unchanged size
 ##   CHECKPOINTS     model directory (default <repo>/checkpoints, created if missing)
 ## Loads the v4l2loopback kernel module via sudo if the virtual camera does not exist yet.
 ## Stop with Ctrl+C.
@@ -26,6 +28,16 @@ VIRTUAL_CAM="/dev/video${VIRTUAL_CAM_NR}"
 
 [[ -e "${CAMERA}" ]] || { echo "webcam ${CAMERA} not found" >&2; exit 1; }
 
+# With exclusive_caps=1, v4l2loopback can get stuck without output capability after the previous writer
+# stopped (e.g. when the output size changed while an app had the device open). Only reloading the module helps.
+if [[ -e "${VIRTUAL_CAM}" ]] && command -v v4l2-ctl >/dev/null \
+        && ! v4l2-ctl -d "${VIRTUAL_CAM}" --info | sed -n '/Device Caps/,$p' | grep -q 'Video Output'; then
+    echo "${VIRTUAL_CAM} does not accept output, reloading v4l2loopback (needs sudo)"
+    sudo modprobe -r v4l2loopback || {
+        echo "unloading failed: close all apps using the virtual camera (e.g. Teams) and try again" >&2
+        exit 1
+    }
+fi
 if [[ ! -e "${VIRTUAL_CAM}" ]]; then
     echo "loading v4l2loopback for ${VIRTUAL_CAM} (needs sudo)"
     # exclusive_caps=1: browsers and video conferencing apps only list capture-only devices
@@ -39,6 +51,8 @@ fi
 
 ARGS=(-e FLIP_SERVICES=live -e "FLIP_LIVE_CAMERA=${CAMERA}" -e "FLIP_LIVE_VIRTUAL_CAM=${VIRTUAL_CAM}")
 [[ "${PASTE_BACK}" == "1" ]] && ARGS+=(-e FLIP_LIVE_PASTE_BACK=1)
+VIRTUAL_CAM_SIZE="${VIRTUAL_CAM_SIZE:-1280x720}"
+[[ "${VIRTUAL_CAM_SIZE}" == "native" ]] || ARGS+=(-e "FLIP_LIVE_VIRTUAL_CAM_SIZE=${VIRTUAL_CAM_SIZE}")
 [[ -n "${FLIP_ANIMAL}" ]] && ARGS+=(-e "FLIP_ANIMAL=${FLIP_ANIMAL}")
 if [[ -n "${SOURCE}" ]]; then
     [[ -f "${SOURCE}" ]] || { echo "source image ${SOURCE} not found" >&2; exit 1; }

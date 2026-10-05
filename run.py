@@ -44,6 +44,28 @@ else:
     FFMPEG = "ffmpeg"
 
 
+def fit_to_frame(img, width, height):
+    """
+    Scales img into a width x height frame without distortion. The free area is filled with a
+    blurred, darkened, enlarged copy of img (instead of stretching it, as some conferencing apps do).
+    """
+    h, w = img.shape[:2]
+    # background: cover the frame, blur at 1/16 resolution to keep it cheap
+    small_w, small_h = max(width // 16, 1), max(height // 16, 1)
+    cover = max(small_w / w, small_h / h)
+    bg = cv2.resize(img, (max(round(w * cover), small_w), max(round(h * cover), small_h)), interpolation=cv2.INTER_AREA)
+    y0, x0 = (bg.shape[0] - small_h) // 2, (bg.shape[1] - small_w) // 2
+    bg = cv2.GaussianBlur(bg[y0:y0 + small_h, x0:x0 + small_w], (0, 0), 2)
+    frame = cv2.resize((bg * 0.6).astype(np.uint8), (width, height), interpolation=cv2.INTER_LINEAR)
+    # foreground: fit into the frame, centered
+    scale = min(width / w, height / h)
+    fg_w, fg_h = round(w * scale), round(h * scale)
+    fg = cv2.resize(img, (fg_w, fg_h), interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
+    y0, x0 = (height - fg_h) // 2, (width - fg_w) // 2
+    frame[y0:y0 + fg_h, x0:x0 + fg_w] = fg
+    return frame
+
+
 def run_with_video(args):
     print(Fore.RED+'Render,  Q > exit,  S > Stitching,  Z > RelativeMotion,  X > AnimationRegion,  C > CropDrivingVideo, KL > AdjustSourceScale, NM > AdjustDriverScale,  Space > Webcamassource,  R > SwitchRealtimeWebcamUpdate'+Style.RESET_ALL)
     infer_cfg = OmegaConf.load(args.cfg)
@@ -74,6 +96,9 @@ def run_with_video(args):
         vcap = cv2.VideoCapture(args.dri_video)
     fps = int(vcap.get(cv2.CAP_PROP_FPS))
     virtual_cam = None
+    virtual_cam_size = None
+    if args.virtual_cam_size:
+        virtual_cam_size = tuple(int(v) for v in args.virtual_cam_size.lower().split("x"))
     h, w = pipe.src_imgs[0].shape[:2]
     save_dir = f"./results/{datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')}"
     os.makedirs(save_dir, exist_ok=True)
@@ -111,6 +136,8 @@ def run_with_video(args):
             if args.virtual_cam:
                 # send only the animated face (or the pasted-back source image), without the driving frame
                 out_virtual = out_org if infer_cfg.infer_params.flag_pasteback else out_crop
+                if virtual_cam_size is not None:
+                    out_virtual = fit_to_frame(out_virtual, *virtual_cam_size)
                 if virtual_cam is None:
                     import pyvirtualcam
                     virtual_cam = pyvirtualcam.Camera(width=out_virtual.shape[1], height=out_virtual.shape[0],
@@ -341,6 +368,9 @@ if __name__ == '__main__':
     parser.add_argument('--realtime', action='store_true', help='realtime inference')
     parser.add_argument('--virtual_cam', required=False, type=str, default=None,
                         help='v4l2loopback device for the realtime output, e.g. /dev/video10')
+    parser.add_argument('--virtual_cam_size', required=False, type=str, default=None,
+                        help='output size of the virtual camera, e.g. 1280x720; the image is fitted in without '
+                             'distortion and the free area filled with a blurred copy (default: unchanged)')
     parser.add_argument('--no_preview', action='store_true', help='do not open the preview window in realtime mode')
     parser.add_argument('--animal', action='store_true', help='use animal model')
     parser.add_argument('--paste_back', action='store_true', default=False, help='paste back to origin image')
