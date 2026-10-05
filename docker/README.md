@@ -21,7 +21,7 @@ Verification status:
 - `Dockerfile`: shared multi-stage Dockerfile. The `builder` stage (CUDA devel + TRT headers) compiles
   everything that needs nvcc into a venv. The `runtime` stage (CUDA runtime + TRT runtime) only takes over the results.
 - `<gpu>/build.args`: all GPU-specific versions (base images, TRT, torch, ORT, CUDA arch).
-- `build.sh` / `run.sh`: build and run, `start.sh`: container entrypoint.
+- `build.sh` / `run.sh`: build and run, `live.sh`: live mode with webcam, `start.sh`: container entrypoint.
 
 Both images build:
 
@@ -51,11 +51,30 @@ The checkpoints are mounted from `CHECKPOINTS` (default `../checkpoints`) to
 one checkpoint directory, each setup needs its own copy (via `CHECKPOINTS=...`). After a TRT update, delete
 the `.trt` files and they will be rebuilt.
 
+## Live mode (webcam -> virtual camera)
+
+```bash
+docker/live.sh rtx5060ti /path/to/source.jpg
+```
+
+Drives the source image with the webcam and sends the result to a v4l2loopback device that browsers and video
+conferencing apps can use as a camera ("FasterLivePortrait"). If `/dev/video10` does not exist yet, the script loads
+`v4l2loopback` via `sudo modprobe` (`exclusive_caps=1`). Stop with Ctrl+C.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CAMERA` | `/dev/video0` | webcam device |
+| `VIRTUAL_CAM_NR` | `10` | v4l2loopback device number (`/dev/video10`) |
+| `PASTE_BACK` | `0` | `1` = output the full source image instead of the 512x512 face crop |
+
+Without a source image, `assets/examples/source/s10.jpg` is used. Outside Docker the same works with
+`run.py --dri_video /dev/video0 --realtime --virtual_cam /dev/video10 [--no_preview]`.
+
 ## Configuration (environment variables)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `FLIP_SERVICES` | `api webui` | which services to start (`api`, `webui` or both) |
+| `FLIP_SERVICES` | `api webui` | which services to start (`api`, `webui` or both, or `live` alone, see above) |
 | `FLIP_CFG` | `configs/trt_infer.yaml` | inference config. `configs/onnx_infer.yaml` uses onnxruntime (warping then runs on the CPU, slow) |
 | `FLIP_ANIMAL` | `0` | `1` = also build the animal engines, API starts in animal mode |
 | `FLIP_TRT_WORKSPACE_GB` | `12` | TensorRT workspace for building engines |
@@ -82,7 +101,9 @@ docker/run.sh rtx5060ti bash
   `FLIP_ANIMAL=1`, and the download uses `hf download` instead of the deprecated `huggingface-cli`.
 - `src/models/motion_extractor_model.py`: TRT outputs are fetched by name instead of position, because TRT 8 and 10
   order the engine outputs differently.
-- `requirements.txt`: added `colorama` (imported by `run.py`).
+- `requirements.txt`: added `colorama` (imported by `run.py`) and `pyvirtualcam` (live mode).
+- `run.py`: `--dri_video` accepts a camera index or `/dev/videoN`, `--virtual_cam` sends the realtime output to a
+  v4l2loopback device, `--no_preview` disables the OpenCV window, Ctrl+C stops cleanly.
 - `webui.py`: also starts without `checkpoints/Kokoro-82M/voices/`.
 - XPose ops: `setup.py` builds without a visible GPU (`FORCE_CUDA=1`, arch via `TORCH_CUDA_ARCH_LIST`), CUDA code
   adapted to the current torch API (`scalar_type()`, `data_ptr<T>()`).

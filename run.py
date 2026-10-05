@@ -54,7 +54,17 @@ def run_with_video(args):
     if not ret:
         print(f"no face in {args.src_image}! exit!")
         exit(1)
-    if not args.dri_video or not os.path.exists(args.dri_video):
+    if args.dri_video.isdigit() or args.dri_video.startswith("/dev/video"):
+        # camera given as index ("0") or v4l2 device ("/dev/video0")
+        camera = int(args.dri_video) if args.dri_video.isdigit() else args.dri_video
+        if platform.system().lower() == 'linux':
+            vcap = cv2.VideoCapture(camera, cv2.CAP_V4L2)
+        else:
+            vcap = cv2.VideoCapture(camera)
+        if not vcap.isOpened():
+            print(f"camera {args.dri_video} not found! exit!")
+            exit(1)
+    elif not args.dri_video or not os.path.exists(args.dri_video):
         # read frame from camera if no driving video input
         vcap = cv2.VideoCapture(0)
         if not vcap.isOpened():
@@ -63,6 +73,7 @@ def run_with_video(args):
     else:
         vcap = cv2.VideoCapture(args.dri_video)
     fps = int(vcap.get(cv2.CAP_PROP_FPS))
+    virtual_cam = None
     h, w = pipe.src_imgs[0].shape[:2]
     save_dir = f"./results/{datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')}"
     os.makedirs(save_dir, exist_ok=True)
@@ -83,43 +94,59 @@ def run_with_video(args):
     c_lip_lst = []
 
     frame_ind = 0
-    while vcap.isOpened():
-        ret, frame = vcap.read()
-        if not ret:
-            break
-        t0 = time.time()
-        first_frame = frame_ind == 0
-        dri_crop, out_crop, out_org, dri_motion_info = pipe.run(frame, pipe.src_imgs[0], pipe.src_infos[0],
-                                                                first_frame=first_frame)
-        frame_ind += 1
-        if out_crop is None:
-            print(f"no face in driving frame:{frame_ind}")
-            continue
-
-        motion_lst.append(dri_motion_info[0])
-        c_eyes_lst.append(dri_motion_info[1])
-        c_lip_lst.append(dri_motion_info[2])
-
-        infer_times.append(time.time() - t0)
-        # print(time.time() - t0)
-        dri_crop = cv2.resize(dri_crop, (512, 512))
-        out_crop = np.concatenate([dri_crop, out_crop], axis=1)
-        out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
-        if not args.realtime:
-            vout_crop.write(out_crop)
-            out_org = cv2.cvtColor(out_org, cv2.COLOR_RGB2BGR)
-            vout_org.write(out_org)
-        else:
-            if infer_cfg.infer_params.flag_pasteback:
-                out_org = cv2.cvtColor(out_org, cv2.COLOR_RGB2BGR)
-                cv2.imshow('Render', out_org)
-            else:
-                # image show in realtime mode
-                cv2.imshow('Render', out_crop)
-            # 按下'q'键退出循环
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+    try:
+        while vcap.isOpened():
+            ret, frame = vcap.read()
+            if not ret:
                 break
+            t0 = time.time()
+            first_frame = frame_ind == 0
+            dri_crop, out_crop, out_org, dri_motion_info = pipe.run(frame, pipe.src_imgs[0], pipe.src_infos[0],
+                                                                    first_frame=first_frame)
+            frame_ind += 1
+            if out_crop is None:
+                print(f"no face in driving frame:{frame_ind}")
+                continue
+
+            if args.virtual_cam:
+                # send only the animated face (or the pasted-back source image), without the driving frame
+                out_virtual = out_org if infer_cfg.infer_params.flag_pasteback else out_crop
+                if virtual_cam is None:
+                    import pyvirtualcam
+                    virtual_cam = pyvirtualcam.Camera(width=out_virtual.shape[1], height=out_virtual.shape[0],
+                                                      fps=fps if fps > 0 else 30, device=args.virtual_cam,
+                                                      fmt=pyvirtualcam.PixelFormat.RGB)
+                    print(f"virtual camera: {virtual_cam.device} {out_virtual.shape[1]}x{out_virtual.shape[0]}")
+                virtual_cam.send(np.ascontiguousarray(out_virtual))
+
+            motion_lst.append(dri_motion_info[0])
+            c_eyes_lst.append(dri_motion_info[1])
+            c_lip_lst.append(dri_motion_info[2])
+
+            infer_times.append(time.time() - t0)
+            # print(time.time() - t0)
+            dri_crop = cv2.resize(dri_crop, (512, 512))
+            out_crop = np.concatenate([dri_crop, out_crop], axis=1)
+            out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
+            if not args.realtime:
+                vout_crop.write(out_crop)
+                out_org = cv2.cvtColor(out_org, cv2.COLOR_RGB2BGR)
+                vout_org.write(out_org)
+            elif not args.no_preview:
+                if infer_cfg.infer_params.flag_pasteback:
+                    out_org = cv2.cvtColor(out_org, cv2.COLOR_RGB2BGR)
+                    cv2.imshow('Render', out_org)
+                else:
+                    # image show in realtime mode
+                    cv2.imshow('Render', out_crop)
+                # 按下'q'键退出循环
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+    except KeyboardInterrupt:
+        print("stopped by user")
     vcap.release()
+    if virtual_cam is not None:
+        virtual_cam.close()
     if not args.realtime:
         vout_crop.release()
         vout_org.release()
@@ -144,7 +171,7 @@ def run_with_video(args):
         else:
             print(vsave_crop_path)
             print(vsave_org_path)
-    else:
+    elif not args.no_preview:
         cv2.destroyAllWindows()
 
     print(
@@ -312,6 +339,9 @@ if __name__ == '__main__':
                         help='driving video')
     parser.add_argument('--cfg', required=False, type=str, default="configs/onnx_infer.yaml", help='inference config')
     parser.add_argument('--realtime', action='store_true', help='realtime inference')
+    parser.add_argument('--virtual_cam', required=False, type=str, default=None,
+                        help='v4l2loopback device for the realtime output, e.g. /dev/video10')
+    parser.add_argument('--no_preview', action='store_true', help='do not open the preview window in realtime mode')
     parser.add_argument('--animal', action='store_true', help='use animal model')
     parser.add_argument('--paste_back', action='store_true', default=False, help='paste back to origin image')
     args, unknown = parser.parse_known_args()
